@@ -25,4 +25,11 @@ pip install -r requirements.txt
 uvicorn apichatbot.main:app --host 0.0.0.0 --port 8000
 4.Test the APIOpen a browser and go to:
 http://127.0.0.1:8000/docsUse the Swagger UI to interact with the API.
--------------------------------------------------------------------------------------------------------------------------------------------------
+##Deployment on RenderThis 
+project is deployed on Render, and it automatically updates with each push to GitHub.
+Push Changes to GitHub
+git add .
+git commit -m "Updated chatbot logic"
+git push origin mainGo to Render Dashboard → chatbot sql
+Click "Manual Deploy" → "Clear Build Cache & Redeploy"
+------------------------------------------------------------------------------------------------------------
