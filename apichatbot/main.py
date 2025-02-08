@@ -1,11 +1,33 @@
+<<<<<<< HEAD
 import joblib
 from fastapi import FastAPI, Request
 import re
+=======
+from fastapi import FastAPI, Query, HTTPException
+import sqlite3
+import spacy
+import subprocess
+>>>>>>> 89efd5d1f8f4d46b631f7e2b182613f0a32d0642
 
 app = FastAPI()
+DB_PATH = "company.db"  # Define database path
 
+# Load NLP model
+
+
+
+# Try loading the model, if not found, download it
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    nlp = spacy.load("en_core_web_sm")
+
+<<<<<<< HEAD
 # Load the trained model
 intent_model = joblib.load("intent_model.pkl")
+=======
+>>>>>>> 89efd5d1f8f4d46b631f7e2b182613f0a32d0642
 
 # Function to classify intent
 def classify_intent(query):
@@ -18,6 +40,7 @@ async def chatbot(request: Request):
     query = data.get("query", "").lower()
     intent = classify_intent(query)
 
+<<<<<<< HEAD
     if intent == "get_employees_by_department":
         match = re.search(r"employees in (\w+)", query)
         if match:
@@ -43,3 +66,47 @@ async def chatbot(request: Request):
             return get_total_salary_expense(department)
 
     return {"response": "I'm not sure I understand. Try asking about employees, managers, hire dates, or salary expenses."}
+=======
+@app.get("/chat/")
+def chat(query: str = Query(..., description="Enter a natural language query")):
+    """Process a natural language query and return database results."""
+    sql_query, params = process_nlp_query(query)
+    
+    if not sql_query:
+        raise HTTPException(status_code=400, detail="I couldn't understand your query.")
+
+    result = query_db(sql_query, params)
+    
+    if not result:
+        return {"response": "No matching records found."}
+    
+    return {"response": result}
+
+def process_nlp_query(query: str):
+    """Converts natural language queries to SQL queries."""
+    doc = nlp(query.lower())
+
+    # Detect department name
+    department = None
+    for token in doc:
+        if token.text.capitalize() in ["Sales", "Engineering", "Marketing"]:
+            department = token.text.capitalize()
+            break
+
+    # Identify query intent
+    if "employees" in query and department:
+        return "SELECT * FROM Employees WHERE Department = ?", (department,)
+    
+    elif "manager" in query and department:
+        return "SELECT Manager FROM Departments WHERE Name = ?", (department,)
+    
+    elif "hired after" in query:
+        for token in doc:
+            if token.like_date:
+                return "SELECT * FROM Employees WHERE Hire_Date > ?", (token.text,)
+
+    elif "total salary expense" in query and department:
+        return "SELECT SUM(Salary) FROM Employees WHERE Department = ?", (department,)
+
+    return None, None  # If no valid query is detected
+>>>>>>> 89efd5d1f8f4d46b631f7e2b182613f0a32d0642
