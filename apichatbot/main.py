@@ -3,7 +3,7 @@ import sqlite3
 
 app = FastAPI()
 
-DB_PATH = "database/company.db"  # Define database path directly
+DB_PATH ="company.db"  # Define database path directly
 
 def query_db(sql: str, params=()):
     """Executes SQL queries on the database."""
