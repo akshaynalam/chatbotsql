@@ -1,9 +1,12 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 import sqlite3
+import spacy
 
 app = FastAPI()
+DB_PATH = "company.db"  # Define database path
 
-DB_PATH ="company.db"  # Define database path directly
+# Load NLP model
+nlp = spacy.load("en_core_web_sm")
 
 def query_db(sql: str, params=()):
     """Executes SQL queries on the database."""
@@ -18,30 +21,45 @@ def query_db(sql: str, params=()):
 def home():
     return {"message": "Welcome to the FastAPI SQLite Chat Assistant!"}
 
-@app.get("/employees/")
-def get_employees(department: str = Query(..., description="Department Name")):
-    """Fetch employees from a department."""
-    sql = "SELECT * FROM Employees WHERE Department = ?"
-    result = query_db(sql, (department,))
-    return {"employees": result if result else "No employees found"}
+@app.get("/chat/")
+def chat(query: str = Query(..., description="Enter a natural language query")):
+    """Process a natural language query and return database results."""
+    sql_query, params = process_nlp_query(query)
+    
+    if not sql_query:
+        raise HTTPException(status_code=400, detail="I couldn't understand your query.")
 
-@app.get("/manager/")
-def get_manager(department: str = Query(..., description="Department Name")):
-    """Fetch the manager of a department."""
-    sql = "SELECT Manager FROM Departments WHERE Name = ?"
-    result = query_db(sql, (department,))
-    return {"manager": result[0][0] if result else "Department not found"}
+    result = query_db(sql_query, params)
+    
+    if not result:
+        return {"response": "No matching records found."}
+    
+    return {"response": result}
 
-@app.get("/hired_after/")
-def get_employees_hired_after(date: str = Query(..., description="Hire Date (YYYY-MM-DD)")):
-    """Fetch employees hired after a specific date."""
-    sql = "SELECT * FROM Employees WHERE Hire_Date > ?"
-    result = query_db(sql, (date,))
-    return {"employees": result if result else "No employees found"}
+def process_nlp_query(query: str):
+    """Converts natural language queries to SQL queries."""
+    doc = nlp(query.lower())
 
-@app.get("/salary_expense/")
-def total_salary_expense(department: str = Query(..., description="Department Name")):
-    """Calculate total salary expense for a department."""
-    sql = "SELECT SUM(Salary) FROM Employees WHERE Department = ?"
-    result = query_db(sql, (department,))
-    return {"total_salary_expense": result[0][0] if result[0][0] else 0}
+    # Detect department name
+    department = None
+    for token in doc:
+        if token.text.capitalize() in ["Sales", "Engineering", "Marketing"]:
+            department = token.text.capitalize()
+            break
+
+    # Identify query intent
+    if "employees" in query and department:
+        return "SELECT * FROM Employees WHERE Department = ?", (department,)
+    
+    elif "manager" in query and department:
+        return "SELECT Manager FROM Departments WHERE Name = ?", (department,)
+    
+    elif "hired after" in query:
+        for token in doc:
+            if token.like_date:
+                return "SELECT * FROM Employees WHERE Hire_Date > ?", (token.text,)
+
+    elif "total salary expense" in query and department:
+        return "SELECT SUM(Salary) FROM Employees WHERE Department = ?", (department,)
+
+    return None, None  # If no valid query is detected
