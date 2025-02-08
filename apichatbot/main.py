@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 import joblib
 from fastapi import FastAPI, Request
 import re
@@ -8,21 +9,35 @@ import sqlite3
 import spacy
 import subprocess
 >>>>>>> 89efd5d1f8f4d46b631f7e2b182613f0a32d0642
+=======
+import joblib
+from fastapi import FastAPI, Request
+import re
+>>>>>>> 6871958e791f8949026c10dbed27c10e4a6e222c
 
 app = FastAPI()
-DB_PATH = "company.db"  # Define database path
 
-# Load NLP model
+# Load the trained model
+intent_model = joblib.load("intent_model.pkl")
 
+# Function to classify intent
+def classify_intent(query):
+    intent = intent_model.predict([query])[0]
+    return intent
 
+@app.post("/chat")
+async def chatbot(request: Request):
+    data = await request.json()
+    query = data.get("query", "").lower()
+    intent = classify_intent(query)
 
-# Try loading the model, if not found, download it
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
-    nlp = spacy.load("en_core_web_sm")
+    if intent == "get_employees_by_department":
+        match = re.search(r"employees in (\w+)", query)
+        if match:
+            department = match.group(1).capitalize()
+            return get_employees_by_department(department)
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 # Load the trained model
 intent_model = joblib.load("intent_model.pkl")
@@ -110,3 +125,24 @@ def process_nlp_query(query: str):
 
     return None, None  # If no valid query is detected
 >>>>>>> 89efd5d1f8f4d46b631f7e2b182613f0a32d0642
+=======
+    elif intent == "get_manager_by_department":
+        match = re.search(r"manager of (\w+)", query)
+        if match:
+            department = match.group(1).capitalize()
+            return get_manager_by_department(department)
+
+    elif intent == "get_employees_hired_after":
+        match = re.search(r"hired after (\d{4}-\d{2}-\d{2})", query)
+        if match:
+            date = match.group(1)
+            return get_employees_hired_after(date)
+
+    elif intent == "get_total_salary_expense":
+        match = re.search(r"salary expense for (\w+)", query)
+        if match:
+            department = match.group(1).capitalize()
+            return get_total_salary_expense(department)
+
+    return {"response": "I'm not sure I understand. Try asking about employees, managers, hire dates, or salary expenses."}
+>>>>>>> 6871958e791f8949026c10dbed27c10e4a6e222c
