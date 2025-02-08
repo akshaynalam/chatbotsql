@@ -1,85 +1,62 @@
-import joblib
-import json
-import re
+from fastapi import FastAPI, Query, HTTPException
 import sqlite3
-from fastapi import FastAPI, Request, Query, HTTPException
+import spacy
 
 app = FastAPI()
+DB_PATH = "company.db"  # Define database path
 
-DB_PATH = "company.db"  # Database path
-intent_model = joblib.load("intent_model.pkl")  # Load trained intent model
+# Load NLP model (efficiently)
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    raise RuntimeError("spaCy model 'en_core_web_sm' not found. Please run: python -m spacy download en_core_web_sm")
 
-# Function to connect to database
+# Predefined departments for faster lookup
+DEPARTMENTS = {"Sales", "Engineering", "Marketing"}
+
 def query_db(sql: str, params=()):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(sql, params)
-    result = cursor.fetchall()
-    conn.close()
-    return result
+    """Executes SQL queries on the database with optimized connection handling."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        return cursor.fetchall()
 
-# Function to classify intent
-def classify_intent(query: str):
-    return intent_model.predict([query])[0]
+@app.get("/")
+def home():
+    return {"message": "Welcome to the FastAPI SQLite Chat Assistant!"}
 
-# Process natural language query and generate SQL query
-def process_query(query: str):
-    query = query.lower()
-    intent = classify_intent(query)
-
-    if intent == "get_employees_by_department":
-        match = re.search(r"employees in (\w+)", query)
-        if match:
-            department = match.group(1).capitalize()
-            return "SELECT * FROM Employees WHERE Department = ?", (department,)
-
-    elif intent == "get_manager_by_department":
-        match = re.search(r"manager of (\w+)", query)
-        if match:
-            department = match.group(1).capitalize()
-            return "SELECT Manager FROM Departments WHERE Name = ?", (department,)
-
-    elif intent == "get_employees_hired_after":
-        match = re.search(r"hired after (\d{4}-\d{2}-\d{2})", query)
-        if match:
-            date = match.group(1)
-            return "SELECT * FROM Employees WHERE Hire_Date > ?", (date,)
-
-    elif intent == "get_total_salary_expense":
-        match = re.search(r"salary expense for (\w+)", query)
-        if match:
-            department = match.group(1).capitalize()
-            return "SELECT SUM(Salary) FROM Employees WHERE Department = ?", (department,)
-
-    return None, None  # No valid query detected
-
-# POST API: Accept JSON body
-@app.post("/chat")
-async def chatbot_post(request: Request):
-    try:
-        data = await request.json()
-        query = data.get("query", "")
-        if not query:
-            raise ValueError("Query is missing or empty.")
-
-        sql_query, params = process_query(query)
-        if not sql_query:
-            raise HTTPException(status_code=400, detail="I couldn't understand your query.")
-
-        result = query_db(sql_query, params)
-        return {"response": result if result else "No matching records found."}
-
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON format. Please send a valid JSON body.")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-# GET API: Accept query parameters
-@app.get("/chat")
-async def chatbot_get(query: str = Query(..., description="Enter your query")):
-    sql_query, params = process_query(query)
+@app.get("/chat/")
+def chat(query: str = Query(..., description="Enter a natural language query")):
+    """Process a natural language query and return database results."""
+    sql_query, params = process_nlp_query(query)
+    
     if not sql_query:
         raise HTTPException(status_code=400, detail="I couldn't understand your query.")
 
     result = query_db(sql_query, params)
-    return {"response": result if result else "No matching records found."}
+    
+    if not result:
+        return {"response": "No matching records found."}
+
+    return {"response": [dict(zip([col[0] for col in query_db("PRAGMA table_info(Employees);")], row)) for row in result]}
+
+def process_nlp_query(query: str):
+    """Converts natural language queries to SQL queries efficiently."""
+    doc = nlp(query.lower())
+    department = next((token.text.capitalize() for token in doc if token.text.capitalize() in DEPARTMENTS), None)
+
+    if "employees" in query and department:
+        return "SELECT * FROM Employees WHERE Department = ?", (department,)
+
+    if "manager" in query and department:
+        return "SELECT Manager FROM Departments WHERE Name = ?", (department,)
+
+    if "hired after" in query:
+        date = next((token.text for token in doc if token.like_date), None)
+        if date:
+            return "SELECT * FROM Employees WHERE Hire_Date > ?", (date,)
+
+    if "total salary expense" in query and department:
+        return "SELECT COALESCE(SUM(Salary), 0) FROM Employees WHERE Department = ?", (department,)
+
+    return None, None  # If no valid query is detected
