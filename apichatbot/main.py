@@ -1,12 +1,22 @@
 from fastapi import FastAPI, Query, HTTPException
 import sqlite3
 import spacy
+import subprocess
 
 app = FastAPI()
 DB_PATH = "company.db"  # Define database path
 
 # Load NLP model
-nlp = spacy.load("en_core_web_sm")
+
+
+
+# Try loading the model, if not found, download it
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    nlp = spacy.load("en_core_web_sm")
+
 
 def query_db(sql: str, params=()):
     """Executes SQL queries on the database."""
